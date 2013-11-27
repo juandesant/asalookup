@@ -78,8 +78,8 @@ def query_asa_with_args(args):
     asaQueryParams = {
         'source_name_sesame': object_name,              # source name to be resolved
         # 'source_name-asu': None,             # Project source name
-        'raDecCoordinates': "%s+%s" % (urllib.quote(ra),urllib.quote(dec)),        # Hexa in hh:mm:ss.ss [+-]dd:mm:ss.ss, or decimal
-        'radius': radius,                               # Hexadecial (test degrees)
+        #'raDecCoordinates': "%s+%s" % (urllib.quote(ra),urllib.quote(dec)),        # Hexa in hh:mm:ss.ss [+-]dd:mm:ss.ss, or decimal
+        'radius': radius,                               # Hexadecimal (test degrees)
         # 'energy.frequency-asu':  None,  # GHz
         # 'energy.bandwidth-asu':  None,  # GHz
         # 'energy.resolution-asu': None, # kHz
