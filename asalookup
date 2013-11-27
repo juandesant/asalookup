@@ -113,7 +113,7 @@ def query_asa_with_args(args):
             # votable_file = "asa_votable.xml"
             print "Download result VOTable as %s" % votable_file
             urllib.urlretrieve(url, filename = votable_file)
-            print "Download of %s completed" % votable_file
+            print "Downloaded VOTable %s" % votable_file
         except KeyboardInterrupt:
             remove(votable_file)
             sys.exit(1)
