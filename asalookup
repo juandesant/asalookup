@@ -43,7 +43,7 @@ import urllib
 from optparse import OptionParser
 
 sesameQueryUrl = 'http://vizier.u-strasbg.fr/viz-bin/nph-sesame/-op/NSVA?%(name)s'
-asaQueryUrl   = 'http://almascience.nrao.edu/aq/search?'
+asaQueryUrl   = 'https://almascience.nrao.edu/aq/search?'
 
 def lookup_at_asa(args):
     """ Download the finding chart for an astronomical object (first element of
