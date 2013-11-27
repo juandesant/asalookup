@@ -101,8 +101,8 @@ def query_asa_with_args(args):
     }
     
     try:
-        url = asaQueryUrl + urllib.urlencode(asaQueryParams)
         print "Querying ALMA for coordinates %s %s (%s)" % (ra, dec, object_name)
+        url = asaQueryUrl+urllib.urlencode(asaQueryParams)
         
         def remove(path):
             """ Remove a partially downloaded file, ignore errors """
