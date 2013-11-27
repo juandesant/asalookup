@@ -1,2 +1,5 @@
 # votables
 *.vot.xml
+
+# Python compiled (or optimized) files
+*.py[co]
