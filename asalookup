@@ -1,0 +1,352 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# This file is part of asalookup.
+#
+# This is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""
+Usage:
+    asalookup [-h|--help]
+    asalookup [options] fileWithAstroObjects
+
+fileWithAstroObjects is a text file with an astronomical source name
+per line. Non-valid names are ignored. The result is votable with all
+available observations for the objects in fileWithAstroObjects that
+are available at the ALMA Science Archive, downloaded in the directory 
+from which the asalookup script is called.
+
+Use "asalookup -h" for the whole list of supported options.
+
+The ALMA Science Archive can be found at:
+  http://www.almascience.org/aq/
+"""
+
+from __future__ import division # so that 1/2 == 0.5, instead of 1/2==0
+
+import multiprocessing
+import os
+import sys
+import time
+import urllib
+from optparse import OptionParser
+
+sesameQueryUrl = 'http://vizier.u-strasbg.fr/viz-bin/nph-sesame/-op/NSVA?%(name)s'
+asaQueryUrl   = 'http://almascience.nrao.edu/aq/search?'
+
+def lookup_at_asa(args):
+    """ Download the finding chart for an astronomical object (first element of
+    the two-element tuple 'args') to a path (second element of the tuple)"""
+    
+    object_name, ra, dec, votable_file, asa_opt = args
+    
+    # Perform the Sesame query
+    sesameResponse = None
+    
+    if ra == None or dec == None:
+        try:
+            sesameQuery = sesameQueryUrl % {'name': urllib.quote(object_name.strip())}
+            print "Processing Sesame query for %s" % object_name
+            
+            sesameResponse = urllib.urlopen(sesameQuery).readlines()
+            ra, dec = filter(lambda x: x.find('%J') == 0, sesameResponse)[0].split(' ')[1:3]
+        except Exception, e:
+            # We raise the exception if we were not able to come up with a coordinate resolution
+            if ra == None or dec == None:
+                raise e
+    
+    # Query parameters for the ALMA Science Archive
+    # search?radius=0%3A10%3A00&scan_intent-asu=%3D*TARGET*&viewFormat=asdm&publicFilterFlag=public&download=true
+    # search?source_name_sesame=source_name&source_name-asu=source_name&raDecCoordinates=0%3A00%3A00%20-0%3A00%3A00&radius=0%3A10%3A00&energy.frequency-asu=100%20..%20300&energy.bandwidth-asu=%3E2.5&energy.resolution-asu=%3C70&band-asu=3&band-asu=6&start_date-asu=%3E01-01-2011&int_time-asu=30%20..%2060&energy.pol_num-asu=0&energy.pol_num-asu=1&energy.pol_num-asu=2&energy.pol_num-asu=%3D3%7C4&pwv-asu=%3C0.49&scan_intent-asu=%3D*TARGET*&scan_intent-asu=%3D*AMPLI*&scan_intent-asu=%3D*BANDPASS*&scan_intent-asu=%3D*PHASE*&scan_intent-asu=%3D*POINTING*&viewFormat=asdm&publicFilterFlag=none&download=true
+    # parameters ending in -asu accept restrictions in ASU form
+    # i.e., energy.frequency-asu = 100 .. 300 for a frequency between
+    # 100 and 300 GHz, or
+    # energy.frequency-asu = 100 .. 300 || 500 .. 600 for frequencies
+    # either from 100 to 300, or from 500 to 600 GHz.
+    radius=0.5
+    asaQueryParams = {
+        'source_name_sesame': object_name,              # source name to be resolved
+        'source_name-asu': None,             # Project source name
+        'raDecCoordinates': "%s %s" % (ra,dec),        # Hexa in hh:mm:ss.ss [+-]dd:mm:ss.ss, or decimal
+        'radius': radius,                               # Hexadecial (test degrees)
+        'energy.frequency-asu':  None,  # GHz
+        'energy.bandwidth-asu':  None,  # GHz
+        'energy.resolution-asu': None, # kHz
+        'band-asu': ['3','6','7','9'], # all available bands as of 27/11/2013
+        'int_time-asu': None, # seconds
+        'energy.pol_num-asu': ['1','2','=3|4'], # all polarizations
+      # 'energy.pol_num-asu': '=1|2|3|4', # alternative ASU
+        
+        'publicFilterFlag': 'none', # no filtering: all data is returned 
+        'scan_intent-asu': [
+                '=*TARGET*',   # targeted observations
+                '=*AMPLI*',    # amplitud calibration
+                '=*BANDPASS*', # bandpass calibration
+                '=*PHASE*',    # phase calibration
+                '=*POINTING*'  # pointing calibration
+        ], 
+        'viewFormat': 'asdm',   # we want the raw data, not project data
+        'download': 'true'
+    }
+    
+    try:
+        print "Querying SDSS for coordinates %s %s (%s)" % (ra, dec, object_name)
+        url = asaQueryUrl + urllib.urlencode(asaQueryParams)
+        
+        def remove(path):
+            """ Remove a partially downloaded file, ignore errors """
+            try: os.unlink(path)
+            except: pass
+        
+        try:
+            # votable_file = "asa_votable.xml"
+            print "Download result VOTable as %s" % votable_file
+            urllib.urlretrieve(url, filename = votable_file)
+            print "Download of %s completed" % votable_file
+        except KeyboardInterrupt:
+            remove(votable_file)
+            sys.exit(1)
+        except:
+            remove(votable_file)
+            print "Download of %s failed" % votable_file
+    
+    except Exception, e:
+        print "Error. Coordinates %s %s not found in ASA" % (ra, dec)
+
+def option_parsing_setup():
+    """Use optparse to get the arguments"""
+    # Constants for the defaults
+    sdss_native_scale = 0.396127
+    pixel_size = 512
+    
+    # Creating the options
+    op = OptionParser(usage="sdssDR9findingChart [options] file") 
+    op.add_option(
+        "-x", "--x-size", dest="xsize", metavar="PIXEL", type="int",
+        default = pixel_size,
+        help="The finding chart will be PIXEL pixels wide. Default value, %s." % pixel_size
+    )
+    op.add_option(
+        "-y", "--y-size", dest="ysize", metavar="PIXEL", type="int",
+        default = pixel_size,
+        help="The finding chart will be PIXEL pixels high. Default value, %s." % pixel_size
+    )
+    op.add_option(
+        "-s", "--scale", dest="scale", metavar="SCALE", type="float",
+        default = sdss_native_scale,
+        help=("The finding chart pixel resolution will be SCALE arc-seconds per pixel. "+
+        "Defaults to %s arc-seconds per pixel (native SDSS pixel resolution).") % sdss_native_scale
+    )
+    op.add_option(
+        "-z", "--zoom", dest="zoom", metavar="ZOOM-RATIO", type="float",
+        help=("The finding chart pixel resolution will be zoomed by ZOOM-RATIO from specified "+
+        "scale ratio (native scale ratio if -s is not used). Values above 1 "+
+        "imply zooming in, values below 1 zooming out. Used alone, is equivalent to the -s "+
+        "option with a SCALE value of %s/ZOOM-RATIO.") % sdss_native_scale
+    )
+    op.add_option(
+        "-r", "--rescale", dest="rescale_velocity", metavar="VELOCITY", type="float",
+        help="When this option is set, the size of the image is chosen so that "+
+        "most of the object can fit the image. Works more reliably for objects "+
+        "with recessional velocities >1500 km/s. If you want to know the actual "+
+        "scale, use it with the -L option. The autosizing mechanism will try to "+
+        "assume a scaling proportional to the ration of the given VELOCITY and "+
+        "the object velocity as reported by Sesame. It cannot work with the "+
+        "SDSS_COORDINATES option. Use the --size-column option instead."
+    )
+    op.add_option(
+        "-c", "--size-column", dest="size_column", action="store_true",
+        default=False,
+        help="This option can only be used with the SDSS_COORDINATES option. "+
+        "If present, the file must contain a column named size, which shows "+
+        "the size of the object in arcseconds. "+
+        "The script will use the size column to compute the scale that will "+
+        "keep the galaxy centered and zoomed in."
+    )
+    op.add_option(
+        "-G", "--grid", dest="asa_opt", action="append_const", 
+        const="G",
+        help="Corresponds with the G option in the SDSS web chart tool; "+
+        "when used, the image sports a grid with  and crosshairs."
+    )
+    op.add_option(
+        "-L", "--label", dest="asa_opt", action="append_const", 
+        const="L",
+        help="Corresponds with the L option in the SDSS web chart tool; "+
+        "when used, the image has a label overlay indicating the chart parameters."
+    )
+    op.add_option(
+        "-I", "--invert", dest="asa_opt", action="append_const", 
+        const="I",
+        help="Corresponds with the I option in the SDSS web chart tool; "+
+        "when set, the image color map is inverted."
+    )
+    op.add_option(
+        "-P", "--photometric-objects", dest="asa_opt", action="append_const", 
+        const="P",
+        help="Corresponds with the P option in the SDSS web chart tool; "+
+        "shows light-blue circles around SDSS photometric objects."
+    )
+    op.add_option(
+        "-S", "--spectroscopic-objects", dest="asa_opt", action="append_const", 
+        const="S",
+        help="Corresponds with the S option in the SDSS web chart tool; "+
+        "shows red squares around SDSS spectroscopic objects."
+    )
+    op.add_option(
+        "-O", "--outlines", dest="asa_opt", action="append_const", 
+        const="O",
+        help="Corresponds with the O option in the SDSS web chart tool; "+
+        "shows green outlines around SDSS photometric objects, showing "+
+        "where the area for which the photometry is calculated."
+    )
+    op.add_option(
+        "-B", "--bounding-boxes", dest="asa_opt", action="append_const", 
+        const="B",
+        help="Corresponds with the B option in the SDSS web chart tool; "+
+        "shows pink squares that bound SDSS photometric objects."
+    )
+    op.add_option(
+        "-F", "--fields", dest="asa_opt", action="append_const", 
+        const="F",
+        help="Corresponds with the F option in the SDSS web chart tool; "+
+        "shows gray outlines demarcating the SDSS fields."
+    )
+    op.add_option(
+        "-M", "--masks", dest="asa_opt", action="append_const", 
+        const="M",
+        help="Corresponds with the M option in the SDSS web chart tool; "+
+        "shows pink footprints around masked objects, such as bright objects "+
+        "and data artifacts."
+    )
+    op.add_option(
+        "-Q", "--plates", dest="asa_opt", action="append_const", 
+        const="Q",
+        help="Corresponds with the Q option in the SDSS web chart tool; "+
+        "shows circular plates (in lavender) used for spectra collection."
+    )
+    op.add_option(
+        "-m", "--mode", dest="mode", metavar="MODE",
+        type="choice",
+        choices=["OBJECT_LIST", "SDSS_COORDINATES"],
+        default="OBJECT_LIST",
+        help="MODE can be either OBJECT_LIST or SDSS_COORDINATES. If set to "+
+             "OBJECT_LIST, each line is expected to have an object name, "+
+             "and Sesame will be used to obtain RA and DEC. This is the default. "+
+             "If set to SDSS_COORDINATES, the file is supposed to be either "+
+             "comma-, blank-, or tab-separated, with at least columns for RA y Dec. "+
+             "If a column with name size is present, the tool will try to fit "+
+             "the size into the frame."
+    )
+    
+    return op
+
+# Define __main__ environment
+if __name__=='__main__':
+    op = option_parsing_setup() # Returns a suitably setup option parser
+    (options, args) = op.parse_args()
+    
+    if options.zoom != None:
+        options.scale = options.scale/options.zoom
+    
+    # If no options, 
+    asa_opt = ""
+    if options.asa_opt:
+        asa_opt = "".join(options.asa_opt)
+    
+    objects_file = args[0] # We get the first file; we could loop on this, but not for the time being.
+    
+    # Use a pool of workers and download the images in parallel.
+    # As there is more latency than processing, we don't use CPU counts; instead, we use a number that does not cause Sesame to throttle our client 
+    pool = multiprocessing.Pool(8)
+    map_async_args = None
+    
+    with open(objects_file,'r') as f:
+        # Get only non-empty lines, stripped of trailing blanks and \n
+        if options.mode == "OBJECT_LIST":
+            objects = filter(lambda x: len(x)>0, map(lambda x: x.strip(), f.readlines()))
+            map_async_args = (
+                (name, None, None, name.strip() + '.vot.xml', asa_opt)
+                   for name in objects
+            )
+        elif options.mode == "SDSS_COORDINATES":
+            # Use astropy to read coordinates
+            try:
+                from astropy.table import Table, Column
+                import numpy as np
+            except ImportError, e:
+                print "You need astropy and numpy for parsing SDSS_COORDINATES files"
+                raise e
+            
+            objectArray    = Table.read(f, format='ascii')
+            columnNames    = objectArray.colnames
+            raColNames     = filter(lambda x: x.find("ra") == 0, columnNames)
+            decColNames    = filter(lambda x: x.find("dec") == 0, columnNames)
+            sizeColNames   = filter(lambda x: x.find("size") == 0, columnNames)
+            objectColNames = filter( # we try to use columns starting with obj, name, source or target
+                                lambda x: x.find("obj") == 0 
+                                       or x.find("name") == 0
+                                       or x.find("source") == 0
+                                       or x.find("target") == 0,
+                                columnNames
+            )
+            
+            raCol     = None
+            decCol    = None
+            objectCol = None
+            sizeCol   = None
+            
+            if not raColNames or not decColNames:
+                raise ValueError("There sould be a ra and dec columns")
+            else:
+                raCol = raColNames[0]
+                decCol = decColNames[0]
+            
+            if not objectColNames:
+                numRows = len(np.array(objectArray))
+                objectArray.add_column(
+                              Column( name='objid', data=range(1,numRows+1) ),
+                              index=0
+                )
+                objectColNames = ['objid']
+            
+            # One way or the other, we have an object column
+            objectCol = objectColNames[0]
+            
+            if options.size_column and not sizeColNames:
+                raise ValueError(
+                    "You must provide a file with a size column "+
+                    "if you use the --size-column option"
+                )
+            if sizeColNames and options.size_column:
+                sizeCol = sizeColNames[0]
+            else: # We add a fake column both if there is no size column, and if we don't want to use the provided size column
+                numRows = len(np.array(objectArray))
+                objectArray.add_column(
+                            Column( name = 'fake_size', data=[None for i in range(numRows)])
+                )
+                sizeCol = 'fake_size'
+            
+            map_async_args = (
+                (row[objectCol], row[raCol], row[decCol], "%s.vot.xml" % row[objectCol], asa_opt)
+                for row in objectArray
+            )
+        else:
+            raise ValueError("--mode should be OBJECT_LIST or SDSS_COORDINATES")
+        
+        # With the pool and map_async_args we get our results
+        result = pool.map_async(lookup_at_asa, map_async_args)
+        while not result.ready():
+            time.sleep(1)
+        result.get() # reraise exceptions of the remote call, if any
