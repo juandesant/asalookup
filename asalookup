@@ -77,27 +77,27 @@ def query_asa_with_args(args):
     radius=0.5
     asaQueryParams = {
         'source_name_sesame': object_name,              # source name to be resolved
-        'source_name-asu': None,             # Project source name
-        'raDecCoordinates': "%s %s" % (ra,dec),        # Hexa in hh:mm:ss.ss [+-]dd:mm:ss.ss, or decimal
+        # 'source_name-asu': None,             # Project source name
+        'raDecCoordinates': "%s+%s" % (urllib.quote(ra),urllib.quote(dec)),        # Hexa in hh:mm:ss.ss [+-]dd:mm:ss.ss, or decimal
         'radius': radius,                               # Hexadecial (test degrees)
-        'energy.frequency-asu':  None,  # GHz
-        'energy.bandwidth-asu':  None,  # GHz
-        'energy.resolution-asu': None, # kHz
-        'band-asu': ['3','6','7','9'], # all available bands as of 27/11/2013
-        'int_time-asu': None, # seconds
-        'energy.pol_num-asu': ['1','2','=3|4'], # all polarizations
+        # 'energy.frequency-asu':  None,  # GHz
+        # 'energy.bandwidth-asu':  None,  # GHz
+        # 'energy.resolution-asu': None, # kHz
+        # 'band-asu': ['3','6','7','9'], # all available bands as of 27/11/2013
+        # 'int_time-asu': None, # seconds
+        # 'energy.pol_num-asu': ['1','2','=3|4'], # all polarizations
       # 'energy.pol_num-asu': '=1|2|3|4', # alternative ASU
         
         'publicFilterFlag': 'none', # no filtering: all data is returned 
-        'scan_intent-asu': [
-                '=*TARGET*',   # targeted observations
-                '=*AMPLI*',    # amplitud calibration
-                '=*BANDPASS*', # bandpass calibration
-                '=*PHASE*',    # phase calibration
-                '=*POINTING*'  # pointing calibration
-        ], 
-        'viewFormat': 'asdm',   # we want the raw data, not project data
-        'download': 'true'
+        # 'scan_intent-asu': [
+        #         '=*TARGET*',   # targeted observations
+        #         '=*AMPLI*',    # amplitud calibration
+        #         '=*BANDPASS*', # bandpass calibration
+        #         '=*PHASE*',    # phase calibration
+        #         '=*POINTING*'  # pointing calibration
+        # ], 
+        'viewFormat': 'asdm' #,   # we want the raw data, not project data
+        # 'download': 'true'
     }
     
     try:
