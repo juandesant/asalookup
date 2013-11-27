@@ -45,7 +45,7 @@ from optparse import OptionParser
 sesameQueryUrl = 'http://vizier.u-strasbg.fr/viz-bin/nph-sesame/-op/NSVA?%(name)s'
 asaQueryUrl   = 'https://almascience.nrao.edu/aq/search?'
 
-def lookup_at_asa(args):
+def query_asa_with_args(args):
     """ Download the finding chart for an astronomical object (first element of
     the two-element tuple 'args') to a path (second element of the tuple)"""
     
@@ -346,7 +346,7 @@ if __name__=='__main__':
             raise ValueError("--mode should be OBJECT_LIST or SDSS_COORDINATES")
         
         # With the pool and map_async_args we get our results
-        result = pool.map_async(lookup_at_asa, map_async_args)
+        result = pool.map_async(query_asa_with_args, map_async_args)
         while not result.ready():
             time.sleep(1)
         result.get() # reraise exceptions of the remote call, if any
